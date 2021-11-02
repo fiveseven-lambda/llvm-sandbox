@@ -1,11 +1,19 @@
-@str = constant [4 x i8] c"%d\0A\00"
+@str = constant [8 x i8] c"%d, %d\0A\00"
 
-declare i32 @printf(i8*, ...)
+declare external i32 @printf(i8*, ...)
 
-declare i32 @fnc()
+declare external i32 @fnc()
 
-define i32 @main() {
+@tmp = global i32 0
+
+define private i32 @inner() {
 	%x = call i32 @fnc()
-	call i32 (i8*, ...) @printf(i8* getelementptr ([4 x i8], [4 x i8]* @str, i64 0, i64 0), i32 %x)
+	%y = load i32, i32* @tmp
+	call i32 (i8*, ...) @printf(i8* getelementptr ([8 x i8], [8 x i8]* @str, i64 0, i64 0), i32 %x, i32 %y)
 	ret i32 0
+}
+
+define external i32 @main() {
+	%ret = call i32 @inner()
+	ret i32 %ret
 }
