@@ -1,7 +1,11 @@
 #include <iostream>
 
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
+#include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
+#include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
+#include "llvm/ExecutionEngine/Orc/CompileUtils.h"
 
 int main(){
 	// executor process control の生成
@@ -19,8 +23,13 @@ int main(){
 	LLVMInitializeNativeTarget();
 	std::unique_ptr<llvm::TargetMachine> target_machine(llvm::EngineBuilder().selectTarget());
 
-	// data layout
 	llvm::DataLayout data_layout = target_machine->createDataLayout();
+
+	llvm::orc::ObjectLinkingLayer object_linking_layer(execution_session);
+
+	LLVMInitializeNativeAsmPrinter();
+	auto compiler = std::make_unique<llvm::orc::SimpleCompiler>(*target_machine);
+	llvm::orc::IRCompileLayer compile_layer(execution_session, object_linking_layer, std::move(compiler));
 
 	// execusion session 上に JIT dynamic library を生成
 	llvm::Expected<llvm::orc::JITDylib &> error_or_main_dynamic_library = execution_session.createJITDylib("main");
@@ -51,9 +60,31 @@ int main(){
 		return jit_evaluated_symbol.getAddress();
 	};
 
-	auto printf_addr = reinterpret_cast<int(*)(...)>(lookup_and_getAddress("printf"));
-	auto sin_addr = reinterpret_cast<double(*)(double)>(lookup_and_getAddress("sin"));
+	llvm::orc::ThreadSafeContext context(std::make_unique<llvm::LLVMContext>());
+	llvm::IRBuilder<llvm::ConstantFolder, llvm::IRBuilderDefaultInserter> builder(*context.getContext());
 
-	// 呼び出し
-	printf_addr("%f\n", sin_addr(1));
+	llvm::Type *double_type = llvm::Type::getDoubleTy(*context.getContext());
+	llvm::FunctionType *function_type = llvm::FunctionType::get(double_type, {double_type}, false);
+	auto main_module = std::make_unique<llvm::Module>("main", *context.getContext());
+	llvm::Function *function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, "fnc", *main_module);
+	llvm::Function *sin_function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, "sin", *main_module);
+	llvm::BasicBlock *basic_block = llvm::BasicBlock::Create(*context.getContext(), "entry", function);
+	builder.SetInsertPoint(basic_block);
+	llvm::Value *x = function->getArg(0);
+	llvm::Value *sin_x = builder.CreateCall(sin_function, {x});
+	builder.CreateRet(sin_x);
+
+	main_module->print(llvm::errs(), nullptr);
+	llvm::errs() << '\n';
+
+	if(auto error = compile_layer.add(main_dynamic_library, llvm::orc::ThreadSafeModule(std::move(main_module), context))){
+		llvm::errs() << error << '\n';
+	}
+
+	auto printf_addr = reinterpret_cast<int(*)(...)>(lookup_and_getAddress("printf"));
+	// auto sin_addr = reinterpret_cast<double(*)(double)>(lookup_and_getAddress("sin"));
+	auto fnc_addr = reinterpret_cast<double(*)(double)>(lookup_and_getAddress("fnc"));
+
+	main_dynamic_library.dump(llvm::errs());
+	printf_addr("sin(1) = %f\n", fnc_addr(1));
 }
