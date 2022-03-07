@@ -65,13 +65,26 @@ int main(){
 
 	llvm::Type *double_type = llvm::Type::getDoubleTy(*context.getContext());
 	llvm::FunctionType *function_type = llvm::FunctionType::get(double_type, {double_type}, false);
+	llvm::PointerType *function_pointer_type = llvm::PointerType::get(function_type, 0);
 	auto main_module = std::make_unique<llvm::Module>("main", *context.getContext());
 	llvm::Function *function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, "fnc", *main_module);
+
 	llvm::Function *sin_function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, "sin", *main_module);
+	llvm::Value *copied_sin_function = new llvm::GlobalVariable(
+		*main_module,
+		function_pointer_type,
+		false,
+		llvm::Function::ExternalLinkage,
+		nullptr,
+		"sin_copied"
+	);
+
 	llvm::BasicBlock *basic_block = llvm::BasicBlock::Create(*context.getContext(), "entry", function);
 	builder.SetInsertPoint(basic_block);
 	llvm::Value *x = function->getArg(0);
-	llvm::Value *sin_x = builder.CreateCall(sin_function, {x});
+	// builder.CreateStore(sin_function, copied_sin_function);
+	llvm::Value *sin_pointer = builder.CreateLoad(function_pointer_type, sin_function);
+	llvm::Value *sin_x = builder.CreateCall(function_type, sin_pointer, {x});
 	builder.CreateRet(sin_x);
 
 	main_module->print(llvm::errs(), nullptr);
@@ -82,7 +95,7 @@ int main(){
 	}
 
 	auto printf_addr = reinterpret_cast<int(*)(...)>(lookup_and_getAddress("printf"));
-	// auto sin_addr = reinterpret_cast<double(*)(double)>(lookup_and_getAddress("sin"));
+	auto sin_addr = reinterpret_cast<double(*)(double)>(lookup_and_getAddress("sin"));
 	auto fnc_addr = reinterpret_cast<double(*)(double)>(lookup_and_getAddress("fnc"));
 
 	main_dynamic_library.dump(llvm::errs());

@@ -14,6 +14,7 @@ define private i32 @inner() {
 }
 
 define external i32 @main() {
-	%ret = call i32 @inner()
+	%inner = load i32 (), i32 ()* @inner
+	%ret = call i32 %inner()
 	ret i32 %ret
 }
