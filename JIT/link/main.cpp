@@ -1,4 +1,5 @@
 #include <iostream>
+#include <gnu/lib-names.h>
 
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
@@ -39,10 +40,10 @@ int main(){
 	}
 	llvm::orc::JITDylib &main_dynamic_library = error_or_main_dynamic_library.get();
 
-	if (auto d = llvm::orc::DynamicLibrarySearchGenerator::Load("/usr/lib/libc.so.6", data_layout.getGlobalPrefix())) {
+	if (auto d = llvm::orc::DynamicLibrarySearchGenerator::Load(LIBC_SO, data_layout.getGlobalPrefix())) {
 		main_dynamic_library.addGenerator(std::move(*d));
 	}
-	if (auto d = llvm::orc::DynamicLibrarySearchGenerator::Load("/usr/lib/libm.so.6", data_layout.getGlobalPrefix())) {
+	if (auto d = llvm::orc::DynamicLibrarySearchGenerator::Load(LIBM_SO, data_layout.getGlobalPrefix())) {
 		main_dynamic_library.addGenerator(std::move(*d));
 	}
 	
@@ -70,21 +71,11 @@ int main(){
 	llvm::Function *function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, "fnc", *main_module);
 
 	llvm::Function *sin_function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, "sin", *main_module);
-	llvm::Value *copied_sin_function = new llvm::GlobalVariable(
-		*main_module,
-		function_pointer_type,
-		false,
-		llvm::Function::ExternalLinkage,
-		nullptr,
-		"sin_copied"
-	);
 
 	llvm::BasicBlock *basic_block = llvm::BasicBlock::Create(*context.getContext(), "entry", function);
 	builder.SetInsertPoint(basic_block);
 	llvm::Value *x = function->getArg(0);
-	// builder.CreateStore(sin_function, copied_sin_function);
-	llvm::Value *sin_pointer = builder.CreateLoad(function_pointer_type, sin_function);
-	llvm::Value *sin_x = builder.CreateCall(function_type, sin_pointer, {x});
+	llvm::Value *sin_x = builder.CreateCall(function_type, sin_function, {x});
 	builder.CreateRet(sin_x);
 
 	main_module->print(llvm::errs(), nullptr);
