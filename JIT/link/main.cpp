@@ -43,9 +43,11 @@ int main(){
 	if (auto d = llvm::orc::DynamicLibrarySearchGenerator::Load(LIBC_SO, data_layout.getGlobalPrefix())) {
 		main_dynamic_library.addGenerator(std::move(*d));
 	}
+	/*
 	if (auto d = llvm::orc::DynamicLibrarySearchGenerator::Load(LIBM_SO, data_layout.getGlobalPrefix())) {
 		main_dynamic_library.addGenerator(std::move(*d));
 	}
+	*/
 	
 	auto lookup_and_getAddress = [&](const char fnc_name[]) -> unsigned long {
 		// JIT dynamic library から関数を探す
@@ -70,7 +72,14 @@ int main(){
 	auto main_module = std::make_unique<llvm::Module>("main", *context.getContext());
 	llvm::Function *function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, "fnc", *main_module);
 
-	llvm::Function *sin_function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, "sin", *main_module);
+	// これでもいい
+	llvm::Type *int64_type = llvm::Type::getInt64Ty(*context.getContext());
+	llvm::Value* sin_function = llvm::ConstantExpr::getIntToPtr(
+		llvm::ConstantInt::get(int64_type, (int64_t)&sin),
+		function_pointer_type
+	);
+	// libm.so から探す場合
+	// llvm::Function *sin_function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, "sin", *main_module);
 
 	llvm::BasicBlock *basic_block = llvm::BasicBlock::Create(*context.getContext(), "entry", function);
 	builder.SetInsertPoint(basic_block);
