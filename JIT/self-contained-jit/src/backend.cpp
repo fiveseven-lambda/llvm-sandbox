@@ -42,7 +42,7 @@ public:
   virtual ~Expression() = default;
   virtual llvm::Value *codegen(llvm::IRBuilderBase &) const = 0;
   virtual void debug_print(std::ostream &) const = 0;
-  virtual Expression *to_constructor(llvm::LLVMContext &) const = 0;
+  virtual Expression *to_constructor() const = 0;
 };
 
 struct Call : Expression {
@@ -84,9 +84,7 @@ public:
     }
     os << ")";
   }
-  Expression *to_constructor(llvm::LLVMContext &context) const override {
-    return nullptr;
-  }
+  Expression *to_constructor() const override { return nullptr; }
 };
 
 struct Integer : Expression {
@@ -100,7 +98,7 @@ public:
   void debug_print(std::ostream &os) const override {
     os << "Integer " << value;
   }
-  Expression *to_constructor(llvm::LLVMContext &context) const override {
+  Expression *to_constructor() const override {
     std::string function_name("create_integer");
     Type *return_type = new IntegerType;
     std::vector<Type *> parameters_type = {new PointerType};
@@ -114,8 +112,7 @@ extern "C" Integer *create_integer(std::int32_t value) {
 }
 
 extern "C" Expression *to_constructor(Expression *expression) {
-  llvm::LLVMContext context;
-  return expression->to_constructor(context);
+  return expression->to_constructor();
 }
 
 extern "C" void debug_print(Expression *expression) {
