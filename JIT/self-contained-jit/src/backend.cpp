@@ -138,15 +138,18 @@ extern "C" void initialize_jit() {
 }
 
 extern "C" void *compile_expression(Expression *expression, Type *return_type,
-                                    std::vector<Type *> *parameters_type) {
+                                    Type **parameters_type,
+                                    std::size_t num_parameters) {
   std::stringstream function_name_builder;
   function_name_builder << expression;
   std::string function_name = function_name_builder.str();
   auto context = std::make_unique<llvm::LLVMContext>();
   llvm::Type *llvm_return_type = return_type->get(*context);
   std::vector<llvm::Type *> llvm_parameters_type;
-  for (Type *parameter_type : *parameters_type) {
-    llvm_parameters_type.push_back(parameter_type->get(*context));
+  for (std::size_t parameter_index = 0; parameter_index < num_parameters;
+       parameter_index++) {
+    llvm_parameters_type.push_back(
+        parameters_type[parameter_index]->get(*context));
   }
   llvm::FunctionType *function_type =
       llvm::FunctionType::get(llvm_return_type, llvm_parameters_type, false);
@@ -163,8 +166,4 @@ extern "C" void *compile_expression(Expression *expression, Type *return_type,
       llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
   auto symbol = exit_on_error(jit->lookup(function_name));
   return symbol.toPtr<void *>();
-}
-
-extern "C" std::vector<Type *> *create_empty_list_of_types() {
-  return new std::vector<Type *>();
 }
