@@ -28,4 +28,5 @@ fn main() {
     }
     println!("cargo:rustc-link-lib=z");
     println!("cargo:rustc-link-lib=zstd");
+    println!("cargo::rustc-link-arg=-export-dynamic");
 }

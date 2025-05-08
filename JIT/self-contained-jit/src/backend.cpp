@@ -1,12 +1,13 @@
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
-#include "llvm/ExecutionEngine/Orc/Shared/ExecutorSymbolDef.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
+#include "llvm/ExecutionEngine/Orc/Shared/ExecutorSymbolDef.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/TargetSelect.h"
-#include <iostream>
 #include <cstdint>
+#include <iostream>
+#include <sstream>
 
 llvm::ExitOnError exit_on_error;
 
@@ -24,6 +25,8 @@ public:
   }
 };
 
+extern "C" Type *create_integer_type() { return new IntegerType; }
+
 class PointerType : public Type {
 public:
   PointerType() {}
@@ -31,6 +34,8 @@ public:
     return llvm::PointerType::get(context, 0);
   }
 };
+
+extern "C" Type *create_pointer_type() { return new PointerType; }
 
 class Expression {
 public:
@@ -47,17 +52,18 @@ struct Call : Expression {
   std::vector<Expression *> arguments;
 
 public:
-  Call(std::string function_name, Type *return_type, std::vector<Type *> parameters_type,
-       std::vector<Expression *> arguments)
-      : function_name(function_name), return_type(return_type), parameters_type(parameters_type),
-        arguments(arguments) {}
+  Call(std::string function_name, Type *return_type,
+       std::vector<Type *> parameters_type, std::vector<Expression *> arguments)
+      : function_name(function_name), return_type(return_type),
+        parameters_type(parameters_type), arguments(arguments) {}
   llvm::Value *codegen(llvm::IRBuilderBase &builder) const override {
     llvm::Type *llvm_return_type = return_type->get(builder.getContext());
     std::vector<llvm::Type *> llvm_parameters_type;
     for (auto &parameter_type : parameters_type) {
       llvm_parameters_type.push_back(parameter_type->get(builder.getContext()));
     }
-    llvm::FunctionType *function_type = llvm::FunctionType::get(llvm_return_type, llvm_parameters_type, false);
+    llvm::FunctionType *function_type =
+        llvm::FunctionType::get(llvm_return_type, llvm_parameters_type, false);
     auto module = builder.GetInsertBlock()->getModule();
     llvm::Function *function = module->getFunction(function_name);
     if (!function) {
@@ -78,7 +84,9 @@ public:
     }
     os << ")";
   }
-  Expression *to_constructor(llvm::LLVMContext &context) const override { return nullptr; }
+  Expression *to_constructor(llvm::LLVMContext &context) const override {
+    return nullptr;
+  }
 };
 
 struct Integer : Expression {
@@ -95,8 +103,8 @@ public:
   Expression *to_constructor(llvm::LLVMContext &context) const override {
     std::string function_name("create_integer");
     Type *return_type = new IntegerType;
-    std::vector<Type *> parameters_type = { new PointerType };
-    std::vector<Expression *> arguments = { new Integer(value) };
+    std::vector<Type *> parameters_type = {new PointerType};
+    std::vector<Expression *> arguments = {new Integer(value)};
     return new Call(function_name, return_type, parameters_type, arguments);
   }
 };
@@ -122,32 +130,29 @@ extern "C" void initialize_jit() {
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::orc::LLJITBuilder jit_builder;
   jit = exit_on_error(jit_builder.create());
-  /*
   char global_prefix = jit->getDataLayout().getGlobalPrefix();
   auto generator = exit_on_error(
       llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
           global_prefix));
   jit->getMainJITDylib().addGenerator(std::move(generator));
-  */
-  const llvm::DataLayout &data_layout = jit->getDataLayout();
-  llvm::orc::MangleAndInterner mangle(jit->getExecutionSession(), data_layout);
-  llvm::orc::SymbolMap symbol_map;
-  symbol_map[mangle("create_integer")] = llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr(reinterpret_cast<std::uint64_t>(&create_integer)), llvm::JITSymbolFlags());
-  exit_on_error(jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(symbol_map)));
 }
 
-extern "C" void *compile_expression(Expression *expression,
-    Type *return_type, std::vector<Type *> *parameters_type) {
+extern "C" void *compile_expression(Expression *expression, Type *return_type,
+                                    std::vector<Type *> *parameters_type) {
+  std::stringstream function_name_builder;
+  function_name_builder << expression;
+  std::string function_name = function_name_builder.str();
   auto context = std::make_unique<llvm::LLVMContext>();
   llvm::Type *llvm_return_type = return_type->get(*context);
   std::vector<llvm::Type *> llvm_parameters_type;
   for (Type *parameter_type : *parameters_type) {
     llvm_parameters_type.push_back(parameter_type->get(*context));
   }
-  llvm::FunctionType *function_type = llvm::FunctionType::get(llvm_return_type, llvm_parameters_type, false);
-  auto module = std::make_unique<llvm::Module>("module", *context);
+  llvm::FunctionType *function_type =
+      llvm::FunctionType::get(llvm_return_type, llvm_parameters_type, false);
+  auto module = std::make_unique<llvm::Module>("", *context);
   llvm::Function *function = llvm::Function::Create(
-      function_type, llvm::Function::ExternalLinkage, "function", *module);
+      function_type, llvm::Function::ExternalLinkage, function_name, *module);
   llvm::IRBuilder builder(*context);
   llvm::BasicBlock *basic_block =
       llvm::BasicBlock::Create(*context, "entry", function);
@@ -156,14 +161,10 @@ extern "C" void *compile_expression(Expression *expression,
   builder.CreateRet(ret);
   exit_on_error(jit->addIRModule(
       llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
-  auto symbol = exit_on_error(jit->lookup("function"));
+  auto symbol = exit_on_error(jit->lookup(function_name));
   return symbol.toPtr<void *>();
 }
 
 extern "C" std::vector<Type *> *create_empty_list_of_types() {
   return new std::vector<Type *>();
-}
-
-extern "C" Type *create_pointer_type() {
-  return new PointerType;
 }
