@@ -3,8 +3,8 @@ unsafe extern "C" {
     fn to_constructor(expression: usize) -> usize;
     fn debug_print(expression: usize);
     fn initialize_jit();
-    fn create_integer_type() -> usize;
-    fn create_pointer_type() -> usize;
+    fn get_integer_type() -> usize;
+    fn get_pointer_type() -> usize;
     fn compile_expression(
         expression: usize,
         return_type: usize,
@@ -21,12 +21,12 @@ fn main() {
     }
     for _ in 0..5 {
         unsafe { debug_print(expression) };
-        let ptr = unsafe { compile_expression(expression, create_pointer_type(), 0, 0) };
+        let ptr = unsafe { compile_expression(expression, get_pointer_type(), 0, 0) };
         let ptr: unsafe fn() -> usize = unsafe { std::mem::transmute(ptr) };
         expression = unsafe { ptr() };
     }
     unsafe { debug_print(expression) };
-    let ptr = unsafe { compile_expression(expression, create_integer_type(), 0, 0) };
+    let ptr = unsafe { compile_expression(expression, get_integer_type(), 0, 0) };
     let ptr: unsafe fn() -> i32 = unsafe { std::mem::transmute(ptr) };
     let result = unsafe { ptr() };
     println!("{}", result);

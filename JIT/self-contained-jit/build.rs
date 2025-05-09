@@ -35,6 +35,7 @@ fn main() {
     .unwrap();
 
     println!("cargo::rerun-if-changed=src/backend.cpp");
+    println!("cargo::rerun-if-changed=src/backend.hpp");
     let mut build = cc::Build::new();
     build.cpp(true);
     build.warnings(false);
