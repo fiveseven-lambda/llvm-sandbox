@@ -7,6 +7,7 @@ unsafe extern "C" {
     fn create_integer(value: i32) -> usize;
     fn create_string(length: usize, pointer: *const u8) -> usize;
     fn create_print(expression: usize) -> usize;
+    fn create_call();
     fn initialize_jit();
     fn compile_expression(
         expression: usize,
