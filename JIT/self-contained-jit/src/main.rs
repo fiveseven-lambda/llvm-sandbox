@@ -1,9 +1,12 @@
+#[allow(unused)]
 unsafe extern "C" {
     fn get_integer_type() -> usize;
     fn get_size_type() -> usize;
     fn debug_print(expression: usize);
     fn to_constructor(expression: usize) -> usize;
     fn create_integer(value: i32) -> usize;
+    fn create_string(length: usize, pointer: *const u8) -> usize;
+    fn create_print(expression: usize) -> usize;
     fn initialize_jit();
     fn compile_expression(
         expression: usize,
@@ -15,7 +18,8 @@ unsafe extern "C" {
 
 fn main() {
     unsafe { initialize_jit() };
-    let mut expression = unsafe { create_integer(10) };
+    let s = "Hello, world!\n";
+    let mut expression = unsafe { create_print(create_string(s.len(), s.as_ptr())) };
     for _ in 0..5 {
         expression = unsafe { to_constructor(expression) };
     }
