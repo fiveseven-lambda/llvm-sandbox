@@ -1,15 +1,15 @@
 unsafe extern "C" {
-    fn create_integer(value: i32) -> usize;
-    fn to_constructor(expression: usize) -> usize;
-    fn debug_print(expression: usize);
-    fn initialize_jit();
     fn get_integer_type() -> usize;
-    fn get_pointer_type() -> usize;
+    fn get_size_type() -> usize;
+    fn debug_print(expression: usize);
+    fn to_constructor(expression: usize) -> usize;
+    fn create_integer(value: i32) -> usize;
+    fn initialize_jit();
     fn compile_expression(
         expression: usize,
         return_type: usize,
-        parameters_type: usize,
         num_parameters: usize,
+        parameters_type: usize,
     ) -> usize;
 }
 
@@ -21,7 +21,7 @@ fn main() {
     }
     for _ in 0..5 {
         unsafe { debug_print(expression) };
-        let ptr = unsafe { compile_expression(expression, get_pointer_type(), 0, 0) };
+        let ptr = unsafe { compile_expression(expression, get_size_type(), 0, 0) };
         let ptr: unsafe fn() -> usize = unsafe { std::mem::transmute(ptr) };
         expression = unsafe { ptr() };
     }

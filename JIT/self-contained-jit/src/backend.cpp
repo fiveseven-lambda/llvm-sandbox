@@ -14,11 +14,11 @@
 #include <iostream>
 #include <sstream>
 
-TypeContext global_type_context;
+static TypeContext global_type_context;
 
-llvm::ExitOnError exit_on_error;
+static llvm::ExitOnError exit_on_error;
 
-std::unique_ptr<llvm::orc::LLJIT> jit;
+static std::unique_ptr<llvm::orc::LLJIT> jit;
 
 Type::~Type() = default;
 
@@ -30,13 +30,13 @@ extern "C" IntegerType *get_integer_type() {
   return &global_type_context.integer_type;
 }
 
-llvm::Type *PointerType::into_llvm_type(llvm::LLVMContext &context) const {
+llvm::Type *SizeType::into_llvm_type(llvm::LLVMContext &context) const {
   return llvm::PointerType::get(context, 0);
 }
 
-extern "C" PointerType *get_pointer_type() {
-  return &global_type_context.pointer_type;
-}
+extern "C" SizeType *get_size_type() { return &global_type_context.size_type; }
+
+Expression::~Expression() = default;
 
 extern "C" void debug_print(Expression *expression) {
   expression->debug_print(std::cout);
@@ -56,7 +56,7 @@ llvm::Value *Integer::codegen(llvm::IRBuilderBase &builder) const {
 void Integer::debug_print(std::ostream &os) const { os << "Integer " << value; }
 
 Expression *Integer::to_constructor() const {
-  Type *return_type = get_pointer_type();
+  Type *return_type = get_size_type();
   std::vector<Type *> parameters_type = {get_integer_type()};
   std::vector<Expression *> arguments = {new Integer(value)};
   return new Call("create_integer", return_type, parameters_type, arguments);
@@ -66,26 +66,24 @@ extern "C" Integer *create_integer(std::int32_t value) {
   return new Integer(value);
 }
 
-Pointer::Pointer(std::size_t value) : value(value) {}
+Size::Size(std::size_t value) : value(value) {}
 
-llvm::Value *Pointer::codegen(llvm::IRBuilderBase &builder) const {
+llvm::Value *Size::codegen(llvm::IRBuilderBase &builder) const {
   llvm::BasicBlock *basic_block = builder.GetInsertBlock();
   const llvm::DataLayout &data_layout = basic_block->getDataLayout();
   return llvm::ConstantInt::get(builder.getIntPtrTy(data_layout), value);
 }
 
-void Pointer::debug_print(std::ostream &os) const { os << "Pointer " << value; }
+void Size::debug_print(std::ostream &os) const { os << "Size " << value; }
 
-Expression *Pointer::to_constructor() const {
-  Type *return_type = get_pointer_type();
-  std::vector<Type *> parameters_type = {get_pointer_type()};
-  std::vector<Expression *> arguments = {new Pointer(value)};
-  return new Call("create_pointer", return_type, parameters_type, arguments);
+Expression *Size::to_constructor() const {
+  Type *return_type = get_size_type();
+  std::vector<Type *> parameters_type = {get_size_type()};
+  std::vector<Expression *> arguments = {new Size(value)};
+  return new Call("create_size", return_type, parameters_type, arguments);
 }
 
-extern "C" Pointer *create_pointer(std::size_t value) {
-  return new Pointer(value);
-}
+extern "C" Size *create_size(std::size_t value) { return new Size(value); }
 
 List::List(Type *type, std::vector<Expression *> elements)
     : type(type), elements(elements) {}
@@ -98,9 +96,9 @@ llvm::Value *List::codegen(llvm::IRBuilderBase &builder) const {
   for (std::size_t element_index = 0; element_index < elements.size();
        element_index++) {
     llvm::Value *element = elements[element_index]->codegen(builder);
-    llvm::Value *pointer =
+    llvm::Value *size =
         builder.CreateConstGEP2_64(array_type, array, 0, element_index);
-    builder.CreateStore(element, pointer);
+    builder.CreateStore(element, size);
   }
   return array;
 }
@@ -118,22 +116,22 @@ void List::debug_print(std::ostream &os) const {
 }
 
 Expression *List::to_constructor() const {
-  std::vector<Type *> new_parameters_type(3, get_pointer_type());
+  std::vector<Type *> new_parameters_type(3, get_size_type());
   std::vector<Expression *> elements_constructor;
   for (Expression *element : elements) {
     elements_constructor.push_back(element->to_constructor());
   }
   std::vector<Expression *> new_arguments = {
-      new Pointer(reinterpret_cast<std::size_t>(type)),
-      new List(get_pointer_type(), elements_constructor),
-      new Pointer(elements.size()),
+      new Size(reinterpret_cast<std::size_t>(type)),
+      new Size(elements.size()),
+      new List(get_size_type(), elements_constructor),
   };
-  return new Call("create_list", get_pointer_type(), new_parameters_type,
+  return new Call("create_list", get_size_type(), new_parameters_type,
                   new_arguments);
 }
 
-extern "C" List *create_list(Type *type, Expression **elements,
-                             std::size_t num_elements) {
+extern "C" List *create_list(Type *type, std::size_t num_elements,
+                             Expression **elements) {
   std::vector<Expression *> vec_elements;
   for (std::size_t element_index = 0; element_index < num_elements;
        element_index++) {
@@ -184,29 +182,29 @@ void Call::debug_print(std::ostream &os) const {
 }
 
 Expression *Call::to_constructor() const {
-  std::vector<Type *> new_parameters_type(5, get_pointer_type());
+  std::vector<Type *> new_parameters_type(5, get_size_type());
   std::vector<Expression *> parameters_type_constructor;
   for (Type *parameter_type : parameters_type) {
     parameters_type_constructor.push_back(
-        new Pointer(reinterpret_cast<std::size_t>(parameter_type)));
+        new Size(reinterpret_cast<std::size_t>(parameter_type)));
   }
   std::vector<Expression *> arguments_constructor;
   for (Expression *argument : arguments) {
     arguments_constructor.push_back(argument->to_constructor());
   }
   std::vector<Expression *> new_arguments = {
-      new Pointer(reinterpret_cast<std::size_t>(function_name)),
-      new Pointer(reinterpret_cast<std::size_t>(return_type)),
-      new List(get_pointer_type(), parameters_type_constructor),
-      new Pointer(parameters_type.size()),
-      new List(get_pointer_type(), arguments_constructor),
+      new Size(reinterpret_cast<std::size_t>(function_name)),
+      new Size(reinterpret_cast<std::size_t>(return_type)),
+      new Size(parameters_type.size()),
+      new List(get_size_type(), parameters_type_constructor),
+      new List(get_size_type(), arguments_constructor),
   };
-  return new Call("create_call", get_pointer_type(), new_parameters_type,
+  return new Call("create_call", get_size_type(), new_parameters_type,
                   new_arguments);
 }
 
 extern "C" Call *create_call(const char *function_name, Type *return_type,
-                             Type **parameters_type, std::size_t num_parameters,
+                             std::size_t num_parameters, Type **parameters_type,
                              Expression **arguments) {
   std::vector<Type *> vec_parameters_type;
   std::vector<Expression *> vec_arguments;
@@ -232,8 +230,8 @@ extern "C" void initialize_jit() {
 }
 
 extern "C" void *compile_expression(Expression *expression, Type *return_type,
-                                    Type **parameters_type,
-                                    std::size_t num_parameters) {
+                                    std::size_t num_parameters,
+                                    Type **parameters_type) {
   std::stringstream function_name_builder;
   function_name_builder << expression;
   std::string function_name = function_name_builder.str();

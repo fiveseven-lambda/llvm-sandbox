@@ -17,21 +17,21 @@ public:
 
 extern "C" IntegerType *get_integer_type();
 
-class PointerType : public Type {
+class SizeType : public Type {
 public:
   llvm::Type *into_llvm_type(llvm::LLVMContext &) const;
 };
 
-extern "C" PointerType *get_pointer_type();
+extern "C" SizeType *get_size_type();
 
 struct TypeContext {
   IntegerType integer_type;
-  PointerType pointer_type;
+  SizeType size_type;
 };
 
 class Expression {
 public:
-  virtual ~Expression() = default;
+  virtual ~Expression();
   virtual llvm::Value *codegen(llvm::IRBuilderBase &) const = 0;
   virtual void debug_print(std::ostream &) const = 0;
   virtual Expression *to_constructor() const = 0;
@@ -53,17 +53,17 @@ public:
 
 extern "C" Integer *create_integer(std::int32_t);
 
-struct Pointer : Expression {
+struct Size : Expression {
   std::size_t value;
 
 public:
-  Pointer(std::size_t);
+  Size(std::size_t);
   llvm::Value *codegen(llvm::IRBuilderBase &) const override;
   void debug_print(std::ostream &) const override;
   Expression *to_constructor() const override;
 };
 
-extern "C" Pointer *create_pointer(std::size_t);
+extern "C" Size *create_size(std::size_t);
 
 struct List : Expression {
   Type *type;
@@ -76,7 +76,7 @@ public:
   Expression *to_constructor() const override;
 };
 
-extern "C" List *create_list(Type *, Expression **, std::size_t);
+extern "C" List *create_list(Type *, std::size_t, Expression **);
 
 struct Call : Expression {
   const char *function_name;
@@ -92,9 +92,9 @@ public:
   Expression *to_constructor() const override;
 };
 
-extern "C" Call *create_call(const char *, Type *, Type **, std::size_t,
+extern "C" Call *create_call(const char *, Type *, std::size_t, Type **,
                              Expression **);
 
 extern "C" void initialize_jit();
 
-extern "C" void *compile_expression(Expression *, Type *, Type **, std::size_t);
+extern "C" void *compile_expression(Expression *, Type *, std::size_t, Type **);
