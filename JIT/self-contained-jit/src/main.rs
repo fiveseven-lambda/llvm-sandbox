@@ -5,16 +5,26 @@ unsafe extern "C" {
     fn initialize_jit();
     fn create_integer_type() -> usize;
     fn create_pointer_type() -> usize;
-    fn compile_expression(expression: usize, return_type: usize, parameters_type: usize, num_parameters: usize) -> usize;
+    fn compile_expression(
+        expression: usize,
+        return_type: usize,
+        parameters_type: usize,
+        num_parameters: usize,
+    ) -> usize;
 }
 
 fn main() {
     unsafe { initialize_jit() };
-    let expression = unsafe { to_constructor(create_integer(10)) };
-    unsafe { debug_print(expression) };
-    let ptr = unsafe { compile_expression(expression, create_pointer_type(), 0, 0) };
-    let ptr: unsafe fn() -> usize = unsafe { std::mem::transmute(ptr) };
-    let expression = unsafe { ptr() };
+    let mut expression = unsafe { create_integer(10) };
+    for _ in 0..5 {
+        expression = unsafe { to_constructor(expression) };
+    }
+    for _ in 0..5 {
+        unsafe { debug_print(expression) };
+        let ptr = unsafe { compile_expression(expression, create_pointer_type(), 0, 0) };
+        let ptr: unsafe fn() -> usize = unsafe { std::mem::transmute(ptr) };
+        expression = unsafe { ptr() };
+    }
     unsafe { debug_print(expression) };
     let ptr = unsafe { compile_expression(expression, create_integer_type(), 0, 0) };
     let ptr: unsafe fn() -> i32 = unsafe { std::mem::transmute(ptr) };

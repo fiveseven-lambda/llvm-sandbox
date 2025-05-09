@@ -46,14 +46,15 @@ public:
 };
 
 struct Call : Expression {
-  std::string function_name;
+  const char *function_name;
   Type *return_type;
   std::vector<Type *> parameters_type;
   std::vector<Expression *> arguments;
 
 public:
-  Call(std::string function_name, Type *return_type,
-       std::vector<Type *> parameters_type, std::vector<Expression *> arguments)
+  Call(const char *function_name, Type *return_type,
+       const std::vector<Type *> &parameters_type,
+       const std::vector<Expression *> &arguments)
       : function_name(function_name), return_type(return_type),
         parameters_type(parameters_type), arguments(arguments) {}
   llvm::Value *codegen(llvm::IRBuilderBase &builder) const override {
@@ -79,13 +80,31 @@ public:
   }
   void debug_print(std::ostream &os) const override {
     os << "Call " << function_name << "(";
-    for (auto &argument : arguments) {
-      argument->debug_print(os);
+    for (std::size_t argument_index = 0; argument_index < arguments.size();
+         argument_index++) {
+      arguments[argument_index]->debug_print(os);
+      if (argument_index < arguments.size() - 1) {
+        os << ", ";
+      }
     }
     os << ")";
   }
-  Expression *to_constructor() const override { return nullptr; }
+  Expression *to_constructor() const override;
 };
+
+extern "C" Call *create_call(const char *function_name, Type *return_type,
+                             Type **parameters_type, std::size_t num_parameters,
+                             Expression **arguments) {
+  std::vector<Type *> vec_parameters_type;
+  std::vector<Expression *> vec_arguments;
+  for (std::size_t parameter_index = 0; parameter_index < num_parameters;
+       parameter_index++) {
+    vec_parameters_type.push_back(parameters_type[parameter_index]);
+    vec_arguments.push_back(arguments[parameter_index]);
+  }
+  return new Call(function_name, return_type, vec_parameters_type,
+                  vec_arguments);
+}
 
 struct Integer : Expression {
   std::int32_t value;
@@ -99,16 +118,102 @@ public:
     os << "Integer " << value;
   }
   Expression *to_constructor() const override {
-    std::string function_name("create_integer");
-    Type *return_type = new IntegerType;
-    std::vector<Type *> parameters_type = {new PointerType};
+    Type *return_type = new PointerType;
+    std::vector<Type *> parameters_type = {new IntegerType};
     std::vector<Expression *> arguments = {new Integer(value)};
-    return new Call(function_name, return_type, parameters_type, arguments);
+    return new Call("create_integer", return_type, parameters_type, arguments);
   }
 };
 
 extern "C" Integer *create_integer(std::int32_t value) {
   return new Integer(value);
+}
+
+struct Pointer : Expression {
+  std::size_t value;
+
+public:
+  Pointer(std::size_t value) : value(value) {}
+  llvm::Value *codegen(llvm::IRBuilderBase &builder) const override {
+    llvm::BasicBlock *basic_block = builder.GetInsertBlock();
+    const llvm::DataLayout &data_layout = basic_block->getDataLayout();
+    return llvm::ConstantInt::get(builder.getIntPtrTy(data_layout), value);
+  }
+  void debug_print(std::ostream &os) const override {
+    os << "Pointer " << value;
+  }
+  Expression *to_constructor() const override {
+    Type *return_type = new PointerType;
+    std::vector<Type *> parameters_type = {new PointerType};
+    std::vector<Expression *> arguments = {new Pointer(value)};
+    return new Call("create_pointer", return_type, parameters_type, arguments);
+  }
+};
+
+extern "C" Pointer *create_pointer(std::size_t value) {
+  return new Pointer(value);
+}
+
+struct List : Expression {
+  Type *type;
+  std::vector<Expression *> elements;
+
+public:
+  List(Type *type, std::vector<Expression *> elements)
+      : type(type), elements(elements) {}
+  llvm::Value *codegen(llvm::IRBuilderBase &builder) const override {
+    llvm::Type *element_type = type->get(builder.getContext());
+    llvm::ArrayType *array_type =
+        llvm::ArrayType::get(element_type, elements.size());
+    llvm::Value *array = builder.CreateAlloca(array_type);
+    for (std::size_t element_index = 0; element_index < elements.size();
+         element_index++) {
+      llvm::Value *element = elements[element_index]->codegen(builder);
+      llvm::Value *pointer =
+          builder.CreateConstGEP2_64(array_type, array, 0, element_index);
+      builder.CreateStore(element, pointer);
+    }
+    return array;
+  }
+  void debug_print(std::ostream &os) const override {
+    os << "List(";
+    for (std::size_t element_index = 0; element_index < elements.size();
+         element_index++) {
+      elements[element_index]->debug_print(os);
+      if (element_index < elements.size() - 1) {
+        os << ", ";
+      }
+    }
+    os << ")";
+  }
+  Expression *to_constructor() const override {
+    std::vector<Type *> new_parameters_type = {
+        new PointerType,
+        new PointerType,
+        new PointerType,
+    };
+    std::vector<Expression *> elements_constructor;
+    for (Expression *element : elements) {
+      elements_constructor.push_back(element->to_constructor());
+    }
+    std::vector<Expression *> new_arguments = {
+        new Pointer(reinterpret_cast<std::size_t>(type)),
+        new List(new PointerType, elements_constructor),
+        new Pointer(elements.size()),
+    };
+    return new Call("create_list", new PointerType, new_parameters_type,
+                    new_arguments);
+  }
+};
+
+extern "C" List *create_list(Type *type, Expression **elements,
+                             std::size_t num_elements) {
+  std::vector<Expression *> vec_elements;
+  for (std::size_t element_index = 0; element_index < num_elements;
+       element_index++) {
+    vec_elements.push_back(elements[element_index]);
+  }
+  return new List(type, vec_elements);
 }
 
 extern "C" Expression *to_constructor(Expression *expression) {
@@ -159,8 +264,34 @@ extern "C" void *compile_expression(Expression *expression, Type *return_type,
   builder.SetInsertPoint(basic_block);
   llvm::Value *ret = expression->codegen(builder);
   builder.CreateRet(ret);
+  // module->print(llvm::outs(), nullptr);
   exit_on_error(jit->addIRModule(
       llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
   auto symbol = exit_on_error(jit->lookup(function_name));
   return symbol.toPtr<void *>();
+}
+
+Expression *Call::to_constructor() const {
+  std::vector<Type *> new_parameters_type = {
+      new PointerType, new PointerType, new PointerType,
+      new PointerType, new PointerType,
+  };
+  std::vector<Expression *> parameters_type_constructor;
+  for (Type *parameter_type : parameters_type) {
+    parameters_type_constructor.push_back(
+        new Pointer(reinterpret_cast<std::size_t>(parameter_type)));
+  }
+  std::vector<Expression *> arguments_constructor;
+  for (Expression *argument : arguments) {
+    arguments_constructor.push_back(argument->to_constructor());
+  }
+  std::vector<Expression *> new_arguments = {
+      new Pointer(reinterpret_cast<std::size_t>(function_name)),
+      new Pointer(reinterpret_cast<std::size_t>(return_type)),
+      new List(new PointerType, parameters_type_constructor),
+      new Pointer(parameters_type.size()),
+      new List(new PointerType, arguments_constructor),
+  };
+  return new Call("create_call", new PointerType, new_parameters_type,
+                  new_arguments);
 }
