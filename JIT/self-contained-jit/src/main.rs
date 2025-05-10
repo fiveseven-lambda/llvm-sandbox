@@ -18,7 +18,14 @@ unsafe extern "C" {
         parameters_type: usize,
         is_variadic: bool,
     ) -> usize;
-    fn create_call();
+    fn create_call(
+        function: usize,
+        return_type: usize,
+        num_parameters: usize,
+        parameters_ty: usize,
+        is_variadic: bool,
+        arguments: usize,
+    ) -> usize;
     fn initialize_jit();
     fn compile_expression(
         expression: usize,
@@ -36,8 +43,22 @@ extern "C" fn hello(x: c_int) -> c_int {
 
 fn main() {
     unsafe { initialize_jit() };
+    let one_integer_type = [unsafe { get_integer_type() }];
     let mut expression = unsafe {
-        create_integer(10)
+        create_call(
+            create_function(
+                c"hello".as_ptr(),
+                get_integer_type(),
+                1,
+                &one_integer_type as *const usize as usize,
+                false,
+            ),
+            get_integer_type(),
+            1,
+            &one_integer_type as *const usize as usize,
+            false,
+            &[create_add_integer(create_parameter(0), create_integer(1))] as *const usize as usize,
+        )
     };
     for _ in 0..5 {
         expression = unsafe { to_constructor(expression) };
@@ -53,11 +74,13 @@ fn main() {
         compile_expression(
             expression,
             get_integer_type(),
-            0,
-            0
+            1,
+            &one_integer_type as *const usize as usize,
         )
     };
-    let ptr: unsafe fn() -> i32 = unsafe { std::mem::transmute(ptr) };
-    let result = unsafe { ptr() };
-    println!("{}", result);
+    let ptr: unsafe fn(i32) -> i32 = unsafe { std::mem::transmute(ptr) };
+    for i in 10..20 {
+        let result = unsafe { ptr(i) };
+        println!("ptr({i}) = {result}");
+    }
 }
