@@ -11,7 +11,7 @@ unsafe extern "C" {
     fn create_parameter(index: i32) -> usize;
     fn create_string(length: usize, pointer: *const u8) -> usize;
     fn create_print(expression: usize) -> usize;
-    fn create_forward_to_function(
+    fn create_function(
         name: *const c_char,
         return_type: usize,
         num_parameters: usize,
@@ -37,18 +37,12 @@ extern "C" fn hello(x: c_int) -> c_int {
 fn main() {
     unsafe { initialize_jit() };
     let mut expression = unsafe {
-        create_forward_to_function(
-            c"hello".as_ptr(),
-            get_integer_type(),
-            1,
-            &[{ get_integer_type() }] as *const usize as usize,
-            false,
-        )
+        create_integer(10)
     };
-    for _ in 0..2 {
+    for _ in 0..5 {
         expression = unsafe { to_constructor(expression) };
     }
-    for _ in 0..2 {
+    for _ in 0..5 {
         unsafe { debug_print(expression) };
         let ptr = unsafe { compile_expression(expression, get_size_type(), 0, 0) };
         let ptr: unsafe fn() -> usize = unsafe { std::mem::transmute(ptr) };
@@ -59,13 +53,11 @@ fn main() {
         compile_expression(
             expression,
             get_integer_type(),
-            1,
-            &[get_integer_type()] as *const usize as usize,
+            0,
+            0
         )
     };
-    let ptr: unsafe fn(i32) -> i32 = unsafe { std::mem::transmute(ptr) };
-    for x in 10..20 {
-        let y = unsafe { ptr(x) };
-        println!("ptr({x}) = {y}");
-    }
+    let ptr: unsafe fn() -> i32 = unsafe { std::mem::transmute(ptr) };
+    let result = unsafe { ptr() };
+    println!("{}", result);
 }

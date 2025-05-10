@@ -53,7 +53,21 @@ extern "C" StringType *get_string_type() {
   return &global_type_context.string_type;
 }
 
+Expression::Expression(void *pointer) : pointer(pointer) {}
+
 Expression::~Expression() = default;
+
+llvm::Value *Expression::codegen(llvm::IRBuilderBase &) const {
+  return nullptr;
+}
+
+void Expression::debug_print(std::ostream &) const {}
+
+Expression *Expression::to_constructor() const { return nullptr; }
+
+extern "C" Expression *create_expression(void *pointer) {
+  return new Expression(pointer);
+}
 
 extern "C" void debug_print(Expression *expression) {
   expression->debug_print(std::cout);
@@ -75,8 +89,10 @@ void Parameter::debug_print(std::ostream &os) const {
 }
 
 Expression *Parameter::to_constructor() const {
-  return new Call("create_parameter", get_size_type(), {get_integer_type()},
-                  {new Integer(index)}, false);
+  return new Call(new Function("create_parameter", get_size_type(),
+                               {get_integer_type()}, false),
+                  get_size_type(), {get_integer_type()}, false,
+                  {new Integer(index)});
 }
 
 extern "C" Parameter *create_parameter(int index) {
@@ -92,8 +108,10 @@ llvm::Value *Boolean::codegen(llvm::IRBuilderBase &builder) const {
 void Boolean::debug_print(std::ostream &os) const { os << "Boolean " << value; }
 
 Expression *Boolean::to_constructor() const {
-  return new Call("create_boolean", get_size_type(), {get_boolean_type()},
-                  {new Boolean(value)}, false);
+  return new Call(new Function("create_boolean", get_size_type(),
+                               {get_boolean_type()}, false),
+                  get_size_type(), {get_boolean_type()}, false,
+                  {new Boolean(value)});
 }
 
 extern "C" Boolean *create_boolean(bool value) { return new Boolean(value); }
@@ -109,8 +127,10 @@ llvm::Value *Integer::codegen(llvm::IRBuilderBase &builder) const {
 void Integer::debug_print(std::ostream &os) const { os << "Integer " << value; }
 
 Expression *Integer::to_constructor() const {
-  return new Call("create_integer", get_size_type(), {get_integer_type()},
-                  {new Integer(value)}, false);
+  return new Call(new Function("create_integer", get_size_type(),
+                               {get_integer_type()}, false),
+                  get_size_type(), {get_integer_type()}, false,
+                  {new Integer(value)});
 }
 
 extern "C" Integer *create_integer(int value) { return new Integer(value); }
@@ -135,9 +155,10 @@ void AddInteger::debug_print(std::ostream &os) const {
 Expression *AddInteger::to_constructor() const {
   Expression *left_constructor = left->to_constructor();
   Expression *right_constructor = right->to_constructor();
-  return new Call("create_add_integer", get_size_type(),
-                  {get_size_type(), get_size_type()},
-                  {left_constructor, right_constructor}, false);
+  return new Call(new Function("create_add_integer", get_size_type(),
+                               {get_size_type(), get_size_type()}, false),
+                  get_size_type(), {get_size_type(), get_size_type()}, false,
+                  {left_constructor, right_constructor});
 }
 
 extern "C" AddInteger *create_add_integer(Expression *left, Expression *right) {
@@ -154,8 +175,9 @@ llvm::Value *Size::codegen(llvm::IRBuilderBase &builder) const {
 void Size::debug_print(std::ostream &os) const { os << "Size " << value; }
 
 Expression *Size::to_constructor() const {
-  return new Call("create_size", get_size_type(), {get_size_type()},
-                  {new Size(value)}, false);
+  return new Call(
+      new Function("create_size", get_size_type(), {get_size_type()}, false),
+      get_size_type(), {get_size_type()}, false, {new Size(value)});
 }
 
 extern "C" Size *create_size(std::size_t value) { return new Size(value); }
@@ -176,9 +198,10 @@ void String::debug_print(std::ostream &os) const {
 
 Expression *String::to_constructor() const {
   return new Call(
-      "create_string", get_size_type(), {get_size_type(), get_size_type()},
-      {new Size(length), new Size(reinterpret_cast<std::size_t>(pointer))},
-      false);
+      new Function("create_string", get_size_type(),
+                   {get_size_type(), get_size_type()}, false),
+      get_size_type(), {get_size_type(), get_size_type()}, false,
+      {new Size(length), new Size(reinterpret_cast<std::size_t>(pointer))});
 }
 
 extern "C" String *create_string(std::size_t length, const char *pointer) {
@@ -217,8 +240,9 @@ void Print::debug_print(std::ostream &os) const {
 }
 
 Expression *Print::to_constructor() const {
-  return new Call("create_print", get_size_type(), {get_size_type()},
-                  {string->to_constructor()}, false);
+  return new Call(
+      new Function("create_print", get_size_type(), {get_size_type()}, false),
+      get_size_type(), {get_size_type()}, false, {string->to_constructor()});
 }
 
 extern "C" Print *create_print(Expression *string) { return new Print(string); }
@@ -258,14 +282,16 @@ Expression *Array::to_constructor() const {
   for (Expression *element : elements) {
     elements_constructor.push_back(element->to_constructor());
   }
-  return new Call("create_array", get_size_type(),
-                  {get_size_type(), get_size_type(), get_size_type()},
-                  {
-                      new Size(reinterpret_cast<std::size_t>(type)),
-                      new Size(elements.size()),
-                      new Array(get_size_type(), elements_constructor),
-                  },
-                  false);
+  return new Call(
+      new Function("create_array", get_size_type(),
+                   {get_size_type(), get_size_type(), get_size_type()}, false),
+      get_size_type(), {get_size_type(), get_size_type(), get_size_type()},
+      false,
+      {
+          new Size(reinterpret_cast<std::size_t>(type)),
+          new Size(elements.size()),
+          new Array(get_size_type(), elements_constructor),
+      });
 }
 
 extern "C" Array *create_array(Type *type, std::size_t num_elements,
@@ -278,10 +304,12 @@ extern "C" Array *create_array(Type *type, std::size_t num_elements,
   return new Array(type, vec_elements);
 }
 
-ForwardToFunction::ForwardToFunction(const char *name, Type *return_type, std::vector<Type *> parameters_type, bool is_variadic):
-  name(name), return_type(return_type), parameters_type(parameters_type), is_variadic(is_variadic) {}
+Function::Function(const char *name, Type *return_type,
+                   std::vector<Type *> parameters_type, bool is_variadic)
+    : name(name), return_type(return_type), parameters_type(parameters_type),
+      is_variadic(is_variadic) {}
 
-llvm::Value *ForwardToFunction::codegen(llvm::IRBuilderBase &builder) const {
+llvm::Value *Function::codegen(llvm::IRBuilderBase &builder) const {
   llvm::Type *llvm_return_type =
       return_type->into_llvm_type(builder.getContext());
   std::vector<llvm::Type *> llvm_parameters_type;
@@ -297,50 +325,64 @@ llvm::Value *ForwardToFunction::codegen(llvm::IRBuilderBase &builder) const {
     function = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, module);
   }
-  std::vector<llvm::Value *> llvm_arguments;
-  for (llvm::Argument &argument : builder.GetInsertBlock()->getParent()->args()) {
-    llvm_arguments.push_back(&argument);
+  llvm::Type *llvm_size_type =
+      get_size_type()->into_llvm_type(builder.getContext());
+  llvm::FunctionType *create_expression_type =
+      llvm::FunctionType::get(llvm_size_type, {llvm_size_type}, false);
+  llvm::Function *llvm_create_expression =
+      module->getFunction("create_expression");
+  if (!llvm_create_expression) {
+    llvm_create_expression =
+        llvm::Function::Create(function_type, llvm::Function::ExternalLinkage,
+                               "create_expression", module);
   }
-  return builder.CreateCall(function, llvm_arguments);
+  return builder.CreateCall(create_expression_type, llvm_create_expression,
+                            {function});
 }
 
-void ForwardToFunction::debug_print(std::ostream &os) const {
-  os << "ForwardToFunction " << name;
+void Function::debug_print(std::ostream &os) const {
+  os << "Function " << name;
 }
 
-Expression *ForwardToFunction::to_constructor() const {
+Expression *Function::to_constructor() const {
   std::vector<Expression *> parameters_type_constructor;
   for (Type *parameter_type : parameters_type) {
     parameters_type_constructor.push_back(
         new Size(reinterpret_cast<std::size_t>(parameter_type)));
   }
-  return new Call("create_forward_to_function", get_size_type(),
-                  {get_size_type(), get_size_type(), get_size_type(), get_size_type(), get_boolean_type()},
-                  {
-                      new Size(reinterpret_cast<std::size_t>(name)),
-                      new Size(reinterpret_cast<std::size_t>(return_type)),
-                      new Size(parameters_type.size()),
-                      new Array(get_size_type(), parameters_type_constructor),
-                      new Boolean(is_variadic),
-                  },
-                  false);
-
+  return new Call(
+      new Function("create_function", get_size_type(),
+                   {get_size_type(), get_size_type(), get_size_type(),
+                    get_size_type(), get_boolean_type()},
+                   false),
+      get_size_type(),
+      {get_size_type(), get_size_type(), get_size_type(), get_size_type(),
+       get_boolean_type()},
+      false,
+      {
+          new Size(reinterpret_cast<std::size_t>(name)),
+          new Size(reinterpret_cast<std::size_t>(return_type)),
+          new Size(parameters_type.size()),
+          new Array(get_size_type(), parameters_type_constructor),
+          new Boolean(is_variadic),
+      });
 }
 
-ForwardToFunction *create_forward_to_function(const char *name, Type *return_type, std::size_t num_parameters, Type **parameters_type, bool is_variadic) {
+Function *create_function(const char *name, Type *return_type,
+                          std::size_t num_parameters, Type **parameters_type,
+                          bool is_variadic) {
   std::vector<Type *> vec_parameters_type;
   for (std::size_t parameter_index = 0; parameter_index < num_parameters;
        parameter_index++) {
     vec_parameters_type.push_back(parameters_type[parameter_index]);
   }
-  return new ForwardToFunction(name, return_type, vec_parameters_type,
-                  is_variadic);
+  return new Function(name, return_type, vec_parameters_type, is_variadic);
 }
 
-Call::Call(const char *function_name, Type *return_type,
-           const std::vector<Type *> &parameters_type,
-           const std::vector<Expression *> &arguments, bool is_variadic)
-    : function_name(function_name), return_type(return_type),
+Call::Call(Expression *function, Type *return_type,
+           const std::vector<Type *> &parameters_type, bool is_variadic,
+           const std::vector<Expression *> &arguments)
+    : function(function), return_type(return_type),
       parameters_type(parameters_type), arguments(arguments),
       is_variadic(is_variadic) {}
 
@@ -354,21 +396,37 @@ llvm::Value *Call::codegen(llvm::IRBuilderBase &builder) const {
   }
   llvm::FunctionType *function_type = llvm::FunctionType::get(
       llvm_return_type, llvm_parameters_type, is_variadic);
+
+  llvm::Value *llvm_function = function->codegen(builder);
+
+  llvm::Type *llvm_size_type =
+      get_size_type()->into_llvm_type(builder.getContext());
+  llvm::FunctionType *compile_expression_type = llvm::FunctionType::get(
+      llvm_size_type,
+      {llvm_size_type, llvm_size_type, llvm_size_type, llvm_size_type}, false);
   auto module = builder.GetInsertBlock()->getModule();
-  llvm::Function *function = module->getFunction(function_name);
-  if (!function) {
-    function = llvm::Function::Create(
-        function_type, llvm::Function::ExternalLinkage, function_name, module);
+  llvm::Function *llvm_compile_expression =
+      module->getFunction("compile_expression");
+  if (!llvm_compile_expression) {
+    llvm_compile_expression = llvm::Function::Create(
+        compile_expression_type, llvm::Function::ExternalLinkage,
+        "compile_expression", module);
   }
+  llvm::Value *llvm_function_pointer = builder.CreateCall(
+      compile_expression_type, llvm_compile_expression, {llvm_function});
+
   std::vector<llvm::Value *> arguments_value;
   for (auto &argument : arguments) {
     arguments_value.push_back(argument->codegen(builder));
   }
-  return builder.CreateCall(function_type, function, arguments_value);
+  return builder.CreateCall(function_type, llvm_function_pointer,
+                            arguments_value);
 }
 
 void Call::debug_print(std::ostream &os) const {
-  os << "Call " << function_name << "(";
+  os << "Call ";
+  function->debug_print(os);
+  os << "(";
   for (std::size_t argument_index = 0; argument_index < arguments.size();
        argument_index++) {
     arguments[argument_index]->debug_print(os);
@@ -389,27 +447,37 @@ Expression *Call::to_constructor() const {
   for (Expression *argument : arguments) {
     arguments_constructor.push_back(argument->to_constructor());
   }
-  return new Call("create_call", get_size_type(),
+  return new Call(new Function("create_call", get_size_type(),
+                               {
+                                   get_size_type(),
+                                   get_size_type(),
+                                   get_size_type(),
+                                   get_size_type(),
+                                   get_boolean_type(),
+                                   get_size_type(),
+                               },
+                               false),
+                  get_size_type(),
                   {
                       get_size_type(),
                       get_size_type(),
                       get_size_type(),
                       get_size_type(),
-                      get_size_type(),
                       get_boolean_type(),
+                      get_size_type(),
                   },
-                  {new Size(reinterpret_cast<std::size_t>(function_name)),
+                  false,
+                  {new Size(reinterpret_cast<std::size_t>(function)),
                    new Size(reinterpret_cast<std::size_t>(return_type)),
                    new Size(parameters_type.size()),
                    new Array(get_size_type(), parameters_type_constructor),
-                   new Array(get_size_type(), arguments_constructor),
-                   new Boolean(is_variadic)},
-                  false);
+                   new Boolean(is_variadic),
+                   new Array(get_size_type(), arguments_constructor)});
 }
 
-extern "C" Call *create_call(const char *function_name, Type *return_type,
+extern "C" Call *create_call(Expression *function, Type *return_type,
                              std::size_t num_parameters, Type **parameters_type,
-                             Expression **arguments, bool is_variadic) {
+                             bool is_variadic, Expression **arguments) {
   std::vector<Type *> vec_parameters_type;
   std::vector<Expression *> vec_arguments;
   for (std::size_t parameter_index = 0; parameter_index < num_parameters;
@@ -417,8 +485,8 @@ extern "C" Call *create_call(const char *function_name, Type *return_type,
     vec_parameters_type.push_back(parameters_type[parameter_index]);
     vec_arguments.push_back(arguments[parameter_index]);
   }
-  return new Call(function_name, return_type, vec_parameters_type,
-                  vec_arguments, is_variadic);
+  return new Call(function, return_type, vec_parameters_type, is_variadic,
+                  vec_arguments);
 }
 
 extern "C" void initialize_jit() {
@@ -436,31 +504,34 @@ extern "C" void initialize_jit() {
 extern "C" void *compile_expression(Expression *expression, Type *return_type,
                                     std::size_t num_parameters,
                                     Type **parameters_type) {
-  std::stringstream function_name_builder;
-  function_name_builder << expression;
-  std::string function_name = function_name_builder.str();
-  auto context = std::make_unique<llvm::LLVMContext>();
-  llvm::Type *llvm_return_type = return_type->into_llvm_type(*context);
-  std::vector<llvm::Type *> llvm_parameters_type;
-  for (std::size_t parameter_index = 0; parameter_index < num_parameters;
-       parameter_index++) {
-    llvm_parameters_type.push_back(
-        parameters_type[parameter_index]->into_llvm_type(*context));
+  if (!expression->pointer) {
+    std::stringstream function_name_builder;
+    function_name_builder << expression;
+    std::string function_name = function_name_builder.str();
+    auto context = std::make_unique<llvm::LLVMContext>();
+    llvm::Type *llvm_return_type = return_type->into_llvm_type(*context);
+    std::vector<llvm::Type *> llvm_parameters_type;
+    for (std::size_t parameter_index = 0; parameter_index < num_parameters;
+         parameter_index++) {
+      llvm_parameters_type.push_back(
+          parameters_type[parameter_index]->into_llvm_type(*context));
+    }
+    llvm::FunctionType *function_type =
+        llvm::FunctionType::get(llvm_return_type, llvm_parameters_type, false);
+    auto module = std::make_unique<llvm::Module>("", *context);
+    llvm::Function *function = llvm::Function::Create(
+        function_type, llvm::Function::ExternalLinkage, function_name, *module);
+    llvm::IRBuilder builder(*context);
+    llvm::BasicBlock *basic_block =
+        llvm::BasicBlock::Create(*context, "", function);
+    builder.SetInsertPoint(basic_block);
+    llvm::Value *ret = expression->codegen(builder);
+    builder.CreateRet(ret);
+    // module->print(llvm::outs(), nullptr);
+    exit_on_error(jit->addIRModule(
+        llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
+    auto symbol = exit_on_error(jit->lookup(function_name));
+    expression->pointer = symbol.toPtr<void *>();
   }
-  llvm::FunctionType *function_type =
-      llvm::FunctionType::get(llvm_return_type, llvm_parameters_type, false);
-  auto module = std::make_unique<llvm::Module>("", *context);
-  llvm::Function *function = llvm::Function::Create(
-      function_type, llvm::Function::ExternalLinkage, function_name, *module);
-  llvm::IRBuilder builder(*context);
-  llvm::BasicBlock *basic_block =
-      llvm::BasicBlock::Create(*context, "entry", function);
-  builder.SetInsertPoint(basic_block);
-  llvm::Value *ret = expression->codegen(builder);
-  builder.CreateRet(ret);
-  // module->print(llvm::outs(), nullptr);
-  exit_on_error(jit->addIRModule(
-      llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
-  auto symbol = exit_on_error(jit->lookup(function_name));
-  return symbol.toPtr<void *>();
+  return expression->pointer;
 }

@@ -12,28 +12,28 @@ public:
 
 class BooleanType : public Type {
 public:
-  llvm::Type *into_llvm_type(llvm::LLVMContext &) const;
+  llvm::Type *into_llvm_type(llvm::LLVMContext &) const override;
 };
 
 extern "C" BooleanType *get_boolean_type();
 
 class IntegerType : public Type {
 public:
-  llvm::Type *into_llvm_type(llvm::LLVMContext &) const;
+  llvm::Type *into_llvm_type(llvm::LLVMContext &) const override;
 };
 
 extern "C" IntegerType *get_integer_type();
 
 class SizeType : public Type {
 public:
-  llvm::Type *into_llvm_type(llvm::LLVMContext &) const;
+  llvm::Type *into_llvm_type(llvm::LLVMContext &) const override;
 };
 
 extern "C" SizeType *get_size_type();
 
 class StringType : public Type {
 public:
-  llvm::Type *into_llvm_type(llvm::LLVMContext &) const;
+  llvm::Type *into_llvm_type(llvm::LLVMContext &) const override;
 };
 
 extern "C" StringType *get_string_type();
@@ -47,11 +47,15 @@ struct TypeContext {
 
 class Expression {
 public:
+  void *pointer;
+  Expression(void *pointer = nullptr);
   virtual ~Expression();
-  virtual llvm::Value *codegen(llvm::IRBuilderBase &) const = 0;
-  virtual void debug_print(std::ostream &) const = 0;
-  virtual Expression *to_constructor() const = 0;
+  virtual llvm::Value *codegen(llvm::IRBuilderBase &) const;
+  virtual void debug_print(std::ostream &) const;
+  virtual Expression *to_constructor() const;
 };
+
+extern "C" Expression *create_expression(void *);
 
 extern "C" void debug_print(Expression *);
 
@@ -155,37 +159,39 @@ public:
 
 extern "C" Array *create_array(Type *, std::size_t, Expression **);
 
-class ForwardToFunction : public Expression {
+class Function : public Expression {
   const char *name;
   Type *return_type;
   std::vector<Type *> parameters_type;
   bool is_variadic;
+
 public:
-  ForwardToFunction(const char *, Type *, std::vector<Type *>, bool);
+  Function(const char *, Type *, std::vector<Type *>, bool);
   llvm::Value *codegen(llvm::IRBuilderBase &) const override;
   void debug_print(std::ostream &) const override;
   Expression *to_constructor() const override;
 };
 
-extern "C" ForwardToFunction *create_forward_to_function(const char *, Type *, std::size_t, Type **, bool);
+extern "C" Function *create_function(const char *, Type *, std::size_t, Type **,
+                                     bool);
 
 class Call : public Expression {
-  const char *function_name;
+  Expression *function;
   Type *return_type;
   std::vector<Type *> parameters_type;
-  std::vector<Expression *> arguments;
   bool is_variadic;
+  std::vector<Expression *> arguments;
 
 public:
-  Call(const char *, Type *, const std::vector<Type *> &,
-       const std::vector<Expression *> &, bool);
+  Call(Expression *, Type *, const std::vector<Type *> &, bool,
+       const std::vector<Expression *> &);
   llvm::Value *codegen(llvm::IRBuilderBase &) const override;
   void debug_print(std::ostream &) const override;
   Expression *to_constructor() const override;
 };
 
-extern "C" Call *create_call(const char *, Type *, std::size_t, Type **,
-                             Expression **, bool);
+extern "C" Call *create_call(Expression *, Type *, std::size_t, Type **, bool,
+                             Expression **);
 
 extern "C" void initialize_jit();
 
