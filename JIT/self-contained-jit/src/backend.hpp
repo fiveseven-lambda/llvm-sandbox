@@ -57,7 +57,19 @@ extern "C" void debug_print(Expression *);
 
 extern "C" Expression *to_constructor(Expression *);
 
-struct Boolean : Expression {
+class Parameter : public Expression {
+  int index;
+
+public:
+  Parameter(int);
+  llvm::Value *codegen(llvm::IRBuilderBase &) const override;
+  void debug_print(std::ostream &) const override;
+  Expression *to_constructor() const override;
+};
+
+extern "C" Parameter *create_parameter(int);
+
+class Boolean : public Expression {
   bool value;
 
 public:
@@ -69,19 +81,31 @@ public:
 
 extern "C" Boolean *create_boolean(bool);
 
-struct Integer : Expression {
-  std::int32_t value;
+class Integer : public Expression {
+  int value;
 
 public:
-  Integer(std::int32_t);
+  Integer(int);
   llvm::Value *codegen(llvm::IRBuilderBase &) const override;
   void debug_print(std::ostream &) const override;
   Expression *to_constructor() const override;
 };
 
-extern "C" Integer *create_integer(std::int32_t);
+extern "C" Integer *create_integer(int);
 
-struct Size : Expression {
+class AddInteger : public Expression {
+  Expression *left, *right;
+
+public:
+  AddInteger(Expression *, Expression *);
+  llvm::Value *codegen(llvm::IRBuilderBase &) const override;
+  void debug_print(std::ostream &) const override;
+  Expression *to_constructor() const override;
+};
+
+extern "C" AddInteger *create_add_integer(Expression *, Expression *);
+
+class Size : public Expression {
   std::size_t value;
 
 public:
@@ -93,7 +117,7 @@ public:
 
 extern "C" Size *create_size(std::size_t);
 
-struct String : Expression {
+class String : public Expression {
   std::size_t length;
   const char *pointer;
 
@@ -106,7 +130,7 @@ public:
 
 extern "C" String *create_string(std::size_t, const char *);
 
-struct Print : Expression {
+class Print : public Expression {
   Expression *string;
 
 public:
@@ -118,7 +142,7 @@ public:
 
 extern "C" Print *create_print(Expression *);
 
-struct Array : Expression {
+class Array : public Expression {
   Type *type;
   std::vector<Expression *> elements;
 
@@ -131,7 +155,7 @@ public:
 
 extern "C" Array *create_array(Type *, std::size_t, Expression **);
 
-struct Call : Expression {
+class Call : public Expression {
   const char *function_name;
   Type *return_type;
   std::vector<Type *> parameters_type;

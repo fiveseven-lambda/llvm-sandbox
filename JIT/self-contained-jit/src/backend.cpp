@@ -31,7 +31,7 @@ extern "C" BooleanType *get_boolean_type() {
 }
 
 llvm::Type *IntegerType::into_llvm_type(llvm::LLVMContext &context) const {
-  return llvm::Type::getInt32Ty(context);
+  return llvm::IntegerType::get(context, sizeof(int) * CHAR_BIT);
 }
 
 extern "C" IntegerType *get_integer_type() {
@@ -64,6 +64,25 @@ extern "C" Expression *to_constructor(Expression *expression) {
   return expression->to_constructor();
 }
 
+Parameter::Parameter(int index) : index(index) {}
+
+llvm::Value *Parameter::codegen(llvm::IRBuilderBase &builder) const {
+  return builder.GetInsertBlock()->getParent()->getArg(index);
+}
+
+void Parameter::debug_print(std::ostream &os) const {
+  os << "Parameter " << index;
+}
+
+Expression *Parameter::to_constructor() const {
+  return new Call("create_parameter", get_size_type(), {get_integer_type()},
+                  {new Integer(index)}, false);
+}
+
+extern "C" Parameter *create_parameter(int index) {
+  return new Parameter(index);
+}
+
 Boolean::Boolean(bool value) : value(value) {}
 
 llvm::Value *Boolean::codegen(llvm::IRBuilderBase &builder) const {
@@ -79,10 +98,12 @@ Expression *Boolean::to_constructor() const {
 
 extern "C" Boolean *create_boolean(bool value) { return new Boolean(value); }
 
-Integer::Integer(std::int32_t value) : value(value) {}
+Integer::Integer(int value) : value(value) {}
 
 llvm::Value *Integer::codegen(llvm::IRBuilderBase &builder) const {
-  return builder.getInt32(value);
+  llvm::Type *integer_type =
+      get_integer_type()->into_llvm_type(builder.getContext());
+  return llvm::ConstantInt::get(integer_type, value);
 }
 
 void Integer::debug_print(std::ostream &os) const { os << "Integer " << value; }
@@ -92,8 +113,35 @@ Expression *Integer::to_constructor() const {
                   {new Integer(value)}, false);
 }
 
-extern "C" Integer *create_integer(std::int32_t value) {
-  return new Integer(value);
+extern "C" Integer *create_integer(int value) { return new Integer(value); }
+
+AddInteger::AddInteger(Expression *left, Expression *right)
+    : left(left), right(right) {}
+
+llvm::Value *AddInteger::codegen(llvm::IRBuilderBase &builder) const {
+  llvm::Value *llvm_left = left->codegen(builder);
+  llvm::Value *llvm_right = right->codegen(builder);
+  return builder.CreateAdd(llvm_left, llvm_right);
+}
+
+void AddInteger::debug_print(std::ostream &os) const {
+  os << "AddInteger(";
+  left->debug_print(os);
+  os << ", ";
+  right->debug_print(os);
+  os << ")";
+}
+
+Expression *AddInteger::to_constructor() const {
+  Expression *left_constructor = left->to_constructor();
+  Expression *right_constructor = right->to_constructor();
+  return new Call("create_add_integer", get_size_type(),
+                  {get_size_type(), get_size_type()},
+                  {left_constructor, right_constructor}, false);
+}
+
+extern "C" AddInteger *create_add_integer(Expression *left, Expression *right) {
+  return new AddInteger(left, right);
 }
 
 Size::Size(std::size_t value) : value(value) {}
