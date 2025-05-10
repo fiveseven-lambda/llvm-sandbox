@@ -278,6 +278,65 @@ extern "C" Array *create_array(Type *type, std::size_t num_elements,
   return new Array(type, vec_elements);
 }
 
+ForwardToFunction::ForwardToFunction(const char *name, Type *return_type, std::vector<Type *> parameters_type, bool is_variadic):
+  name(name), return_type(return_type), parameters_type(parameters_type), is_variadic(is_variadic) {}
+
+llvm::Value *ForwardToFunction::codegen(llvm::IRBuilderBase &builder) const {
+  llvm::Type *llvm_return_type =
+      return_type->into_llvm_type(builder.getContext());
+  std::vector<llvm::Type *> llvm_parameters_type;
+  for (auto &parameter_type : parameters_type) {
+    llvm_parameters_type.push_back(
+        parameter_type->into_llvm_type(builder.getContext()));
+  }
+  llvm::FunctionType *function_type = llvm::FunctionType::get(
+      llvm_return_type, llvm_parameters_type, is_variadic);
+  auto module = builder.GetInsertBlock()->getModule();
+  llvm::Function *function = module->getFunction(name);
+  if (!function) {
+    function = llvm::Function::Create(
+        function_type, llvm::Function::ExternalLinkage, name, module);
+  }
+  std::vector<llvm::Value *> llvm_arguments;
+  for (llvm::Argument &argument : builder.GetInsertBlock()->getParent()->args()) {
+    llvm_arguments.push_back(&argument);
+  }
+  return builder.CreateCall(function, llvm_arguments);
+}
+
+void ForwardToFunction::debug_print(std::ostream &os) const {
+  os << "ForwardToFunction " << name;
+}
+
+Expression *ForwardToFunction::to_constructor() const {
+  std::vector<Expression *> parameters_type_constructor;
+  for (Type *parameter_type : parameters_type) {
+    parameters_type_constructor.push_back(
+        new Size(reinterpret_cast<std::size_t>(parameter_type)));
+  }
+  return new Call("create_forward_to_function", get_size_type(),
+                  {get_size_type(), get_size_type(), get_size_type(), get_size_type(), get_boolean_type()},
+                  {
+                      new Size(reinterpret_cast<std::size_t>(name)),
+                      new Size(reinterpret_cast<std::size_t>(return_type)),
+                      new Size(parameters_type.size()),
+                      new Array(get_size_type(), parameters_type_constructor),
+                      new Boolean(is_variadic),
+                  },
+                  false);
+
+}
+
+ForwardToFunction *create_forward_to_function(const char *name, Type *return_type, std::size_t num_parameters, Type **parameters_type, bool is_variadic) {
+  std::vector<Type *> vec_parameters_type;
+  for (std::size_t parameter_index = 0; parameter_index < num_parameters;
+       parameter_index++) {
+    vec_parameters_type.push_back(parameters_type[parameter_index]);
+  }
+  return new ForwardToFunction(name, return_type, vec_parameters_type,
+                  is_variadic);
+}
+
 Call::Call(const char *function_name, Type *return_type,
            const std::vector<Type *> &parameters_type,
            const std::vector<Expression *> &arguments, bool is_variadic)

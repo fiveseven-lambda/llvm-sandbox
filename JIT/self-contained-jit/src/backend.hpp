@@ -155,6 +155,20 @@ public:
 
 extern "C" Array *create_array(Type *, std::size_t, Expression **);
 
+class ForwardToFunction : public Expression {
+  const char *name;
+  Type *return_type;
+  std::vector<Type *> parameters_type;
+  bool is_variadic;
+public:
+  ForwardToFunction(const char *, Type *, std::vector<Type *>, bool);
+  llvm::Value *codegen(llvm::IRBuilderBase &) const override;
+  void debug_print(std::ostream &) const override;
+  Expression *to_constructor() const override;
+};
+
+extern "C" ForwardToFunction *create_forward_to_function(const char *, Type *, std::size_t, Type **, bool);
+
 class Call : public Expression {
   const char *function_name;
   Type *return_type;
