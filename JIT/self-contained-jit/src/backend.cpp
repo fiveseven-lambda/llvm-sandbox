@@ -329,7 +329,8 @@ llvm::Value *Function::codegen(llvm::IRBuilderBase &builder) const {
 }
 
 extern "C" Expression *create_ready_made(void *pointer) {
-  Expression *ret = reinterpret_cast<Expression *>(operator new(sizeof(Expression)));
+  Expression *ret =
+      reinterpret_cast<Expression *>(operator new(sizeof(Expression)));
   ret->pointer = pointer;
   return ret;
 }
@@ -407,7 +408,15 @@ llvm::Value *Call::codegen(llvm::IRBuilderBase &builder) const {
         "compile_expression", module);
   }
   llvm::Value *llvm_function_pointer = builder.CreateCall(
-      compile_expression_type, llvm_compile_expression, {llvm_function});
+      compile_expression_type, llvm_compile_expression,
+      {
+          llvm_function,
+          llvm::ConstantInt::get(llvm_size_type,
+                                 reinterpret_cast<std::size_t>(return_type)),
+          llvm::ConstantInt::get(llvm_size_type, parameters_type.size()),
+          llvm::ConstantInt::get(llvm_size_type, reinterpret_cast<std::size_t>(
+                                                     &parameters_type[0])),
+      });
 
   std::vector<llvm::Value *> arguments_value;
   for (auto &argument : arguments) {

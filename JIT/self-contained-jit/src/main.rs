@@ -15,23 +15,23 @@ unsafe extern "C" {
         name: *const c_char,
         return_type: usize,
         num_parameters: usize,
-        parameters_type: usize,
+        parameters_type: *const usize,
         is_variadic: bool,
     ) -> usize;
     fn create_call(
         function: usize,
         return_type: usize,
         num_parameters: usize,
-        parameters_ty: usize,
+        parameters_ty: *const usize,
         is_variadic: bool,
-        arguments: usize,
+        arguments: *const usize,
     ) -> usize;
     fn initialize_jit();
     fn compile_expression(
         expression: usize,
         return_type: usize,
         num_parameters: usize,
-        parameters_type: usize,
+        parameters_type: *const usize,
     ) -> usize;
 }
 
@@ -46,18 +46,25 @@ fn main() {
     let one_integer_type = [unsafe { get_integer_type() }];
     let mut expression = unsafe {
         create_call(
-            create_function(
-                c"hello".as_ptr(),
+            to_constructor(create_call(
+                create_function(
+                    c"hello".as_ptr(),
+                    get_integer_type(),
+                    1,
+                    &one_integer_type as *const usize,
+                    false,
+                ),
                 get_integer_type(),
                 1,
-                &one_integer_type as *const usize as usize,
+                &one_integer_type as *const usize,
                 false,
-            ),
+                &[create_add_integer(create_parameter(0), create_integer(1))] as *const usize,
+            )),
             get_integer_type(),
             1,
-            &one_integer_type as *const usize as usize,
+            &one_integer_type as *const usize,
             false,
-            &[create_add_integer(create_parameter(0), create_integer(1))] as *const usize as usize,
+            &[create_integer(10)] as *const usize,
         )
     };
     for _ in 0..5 {
@@ -65,22 +72,13 @@ fn main() {
     }
     for _ in 0..5 {
         unsafe { debug_print(expression) };
-        let ptr = unsafe { compile_expression(expression, get_size_type(), 0, 0) };
+        let ptr = unsafe { compile_expression(expression, get_size_type(), 0, std::ptr::null()) };
         let ptr: unsafe fn() -> usize = unsafe { std::mem::transmute(ptr) };
         expression = unsafe { ptr() };
     }
     unsafe { debug_print(expression) };
-    let ptr = unsafe {
-        compile_expression(
-            expression,
-            get_integer_type(),
-            1,
-            &one_integer_type as *const usize as usize,
-        )
-    };
-    let ptr: unsafe fn(i32) -> i32 = unsafe { std::mem::transmute(ptr) };
-    for i in 10..20 {
-        let result = unsafe { ptr(i) };
-        println!("ptr({i}) = {result}");
-    }
+    let ptr = unsafe { compile_expression(expression, get_integer_type(), 0, std::ptr::null()) };
+    let ptr: unsafe fn() -> i32 = unsafe { std::mem::transmute(ptr) };
+    let result = unsafe { ptr() };
+    println!("ptr() = {result}");
 }
