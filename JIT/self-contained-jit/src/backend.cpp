@@ -53,21 +53,9 @@ extern "C" StringType *get_string_type() {
   return &global_type_context.string_type;
 }
 
-Expression::Expression(void *pointer) : pointer(pointer) {}
+Expression::Expression() : pointer(nullptr) {}
 
 Expression::~Expression() = default;
-
-llvm::Value *Expression::codegen(llvm::IRBuilderBase &) const {
-  return nullptr;
-}
-
-void Expression::debug_print(std::ostream &) const {}
-
-Expression *Expression::to_constructor() const { return nullptr; }
-
-extern "C" Expression *create_expression(void *pointer) {
-  return new Expression(pointer);
-}
 
 extern "C" void debug_print(Expression *expression) {
   expression->debug_print(std::cout);
@@ -327,17 +315,23 @@ llvm::Value *Function::codegen(llvm::IRBuilderBase &builder) const {
   }
   llvm::Type *llvm_size_type =
       get_size_type()->into_llvm_type(builder.getContext());
-  llvm::FunctionType *create_expression_type =
+  llvm::FunctionType *type_create_ready_made =
       llvm::FunctionType::get(llvm_size_type, {llvm_size_type}, false);
-  llvm::Function *llvm_create_expression =
-      module->getFunction("create_expression");
-  if (!llvm_create_expression) {
-    llvm_create_expression =
+  llvm::Function *llvm_create_ready_made =
+      module->getFunction("create_ready_made");
+  if (!llvm_create_ready_made) {
+    llvm_create_ready_made =
         llvm::Function::Create(function_type, llvm::Function::ExternalLinkage,
-                               "create_expression", module);
+                               "create_ready_made", module);
   }
-  return builder.CreateCall(create_expression_type, llvm_create_expression,
+  return builder.CreateCall(type_create_ready_made, llvm_create_ready_made,
                             {function});
+}
+
+extern "C" Expression *create_ready_made(void *pointer) {
+  Expression *ret = reinterpret_cast<Expression *>(operator new(sizeof(Expression)));
+  ret->pointer = pointer;
+  return ret;
 }
 
 void Function::debug_print(std::ostream &os) const {

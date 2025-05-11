@@ -48,14 +48,12 @@ struct TypeContext {
 class Expression {
 public:
   void *pointer;
-  Expression(void *pointer = nullptr);
+  Expression();
   virtual ~Expression();
-  virtual llvm::Value *codegen(llvm::IRBuilderBase &) const;
-  virtual void debug_print(std::ostream &) const;
-  virtual Expression *to_constructor() const;
+  virtual llvm::Value *codegen(llvm::IRBuilderBase &) const = 0;
+  virtual void debug_print(std::ostream &) const = 0;
+  virtual Expression *to_constructor() const = 0;
 };
-
-extern "C" Expression *create_expression(void *);
 
 extern "C" void debug_print(Expression *);
 
