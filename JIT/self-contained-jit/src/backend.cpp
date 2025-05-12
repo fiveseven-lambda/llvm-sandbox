@@ -533,8 +533,62 @@ extern "C" void *compile_expression(Expression *expression, Type *return_type,
     // module->print(llvm::outs(), nullptr);
     exit_on_error(jit->addIRModule(
         llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
-    auto symbol = exit_on_error(jit->lookup(function_name));
-    expression->pointer = symbol.toPtr<void *>();
+    auto address = exit_on_error(jit->lookup(function_name));
+    expression->pointer = address.toPtr<void *>();
   }
   return expression->pointer;
 }
+
+Context::Context()
+    : llvm_context(new llvm::LLVMContext), builder(*llvm_context),
+      module(new llvm::Module("", *llvm_context)) {}
+
+extern "C" Context *create_context() { return new Context; }
+
+extern "C" llvm::Function *
+add_function(Context *context, const char *function_name, Type *return_type,
+             std::size_t num_parameters, Type **parameters_type,
+             std::size_t num_blocks) {
+  llvm::Type *llvm_return_type =
+      return_type->into_llvm_type(*context->llvm_context);
+  std::vector<llvm::Type *> llvm_parameters_type;
+  for (std::size_t parameter_index = 0; parameter_index < num_parameters;
+       parameter_index++) {
+    llvm_parameters_type.push_back(
+        parameters_type[parameter_index]->into_llvm_type(
+            *context->llvm_context));
+  }
+  llvm::FunctionType *function_type =
+      llvm::FunctionType::get(llvm_return_type, llvm_parameters_type, false);
+  llvm::Function *function =
+      llvm::Function::Create(function_type, llvm::Function::ExternalLinkage,
+                             function_name, *context->module);
+  context->basic_blocks = std::vector<llvm::BasicBlock *>();
+  for (std::size_t block_index = 0; block_index < num_blocks; block_index++) {
+    context->basic_blocks.push_back(
+        llvm::BasicBlock::Create(*context->llvm_context, "", function));
+  }
+  return function;
+}
+
+extern "C" void set_insert_point(Context *context, std::size_t block_index) {
+  context->builder.SetInsertPoint(context->basic_blocks[block_index]);
+}
+
+extern "C" void add_expression(Context *context, Expression *expression) {
+  expression->codegen(context->builder);
+}
+
+extern "C" void add_return(Context *context, Expression *expression) {
+  llvm::Value *value = expression->codegen(context->builder);
+  context->builder.CreateRet(value);
+}
+
+extern "C" void *compile(Context *context, const char *function_name) {
+  // context->module->print(llvm::outs(), nullptr);
+  exit_on_error(jit->addIRModule(llvm::orc::ThreadSafeModule(
+      std::move(context->module), std::move(context->llvm_context))));
+  return exit_on_error(jit->lookup(function_name)).toPtr<void *>();
+}
+
+extern "C" void delete_context(Context *context) { delete context; }

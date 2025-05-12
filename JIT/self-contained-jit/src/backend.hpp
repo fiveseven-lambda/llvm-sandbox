@@ -194,3 +194,28 @@ extern "C" Call *create_call(Expression *, Type *, std::size_t, Type **, bool,
 extern "C" void initialize_jit();
 
 extern "C" void *compile_expression(Expression *, Type *, std::size_t, Type **);
+
+struct Context {
+  std::unique_ptr<llvm::LLVMContext> llvm_context;
+  llvm::IRBuilder<llvm::ConstantFolder, llvm::IRBuilderDefaultInserter> builder;
+  std::unique_ptr<llvm::Module> module;
+  std::vector<llvm::BasicBlock *> basic_blocks;
+
+public:
+  Context();
+};
+
+extern "C" Context *create_context();
+
+extern "C" llvm::Function *add_function(Context *, const char *name, Type *,
+                                        std::size_t, Type **, std::size_t);
+
+extern "C" void set_insert_point(Context *, std::size_t);
+
+extern "C" void add_expression(Context *, Expression *);
+
+extern "C" void add_return(Context *, Expression *);
+
+extern "C" void *compile(Context *, const char *);
+
+extern "C" void delete_context(Context *);
