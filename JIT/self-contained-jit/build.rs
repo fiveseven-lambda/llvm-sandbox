@@ -36,14 +36,12 @@ fn main() {
 
     println!("cargo::rerun-if-changed=src/backend.cpp");
     println!("cargo::rerun-if-changed=src/backend.hpp");
-    let mut build = cc::Build::new();
-    build.cpp(true);
-    build.warnings(false);
-    build.file("src/backend.cpp");
-    for flag in &cxxflags {
-        build.flag(flag);
-    }
-    build.compile("backend");
+    cc::Build::new()
+        .cpp(true)
+        .warnings(false)
+        .file("src/backend.cpp")
+        .flags(&cxxflags)
+        .compile("backend");
 
     println!("cargo::rustc-link-search={}", libdir);
     for lib in &libs {
